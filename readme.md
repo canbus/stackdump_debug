@@ -31,13 +31,15 @@ int main()
 该程序在运行时，会产生stackdump文件。因为在f2函数中，调用free释放的内存不是由malloc分配，所以导致程序coredump。当然，这个示例程序比较简答，很容易就知道是由于free非法内存导致coredump。但如果在一个大项目中，定位coredump位置就没那么容易了。
 
 使用Cygwin的gcc编译该程序：
-
+```
 gcc core_dump_demo.c -g -o core_dump_demo
+```
 这里需要使用-g选项，编译时添加调试信息，编译成功会生成一个可执行文件core_dump_demo.exe，然后使用反汇编工具objdump，将该可执行文件反汇编，运行下面命令反汇编该示例程序：
-
+```
 objdump -D -S core_dump_demo.exe > core_dump_demo.rasm
+```
 这里将反汇编的结果重定向到core_dump_demo.rasm文件，由于该文件较大，这里只附上f2函数的反汇编结果，如下：
-
+```
 int f2() {
    1004010e0:   55                      push   %rbp
    1004010e1:   48 89 e5                mov    %rsp,%rbp
@@ -63,16 +65,18 @@ int f2() {
    10040112a:   48 83 c4 30             add    $0x30,%rsp
    10040112e:   5d                      pop    %rbp
    10040112f:   c3                      retq   
+ ```
 在命令行中运行该示例程序，输出如下：
-
+```
 E:\share>core_dump_demo.exe
 entering main...
 entering f1...
 entering f2...
       1 [main] core_dump_demo 5476 cygwin_exception::open_stackdumpfile: Dumping
  stack trace to core_dump_demo.exe.stackdump
+ ```
 并在当前目录生成一个core_dump_demo.exe.stackdump文件，内容如下：
-
+```
 Stack trace:
 Frame        Function    Args
 000FFFFC400  0018005C48C (000FFFFE3F4, 0010000F54C, 0018006D05E, 000FFFFDE50)
@@ -92,21 +96,24 @@ Frame        Function    Args
 00000000000  00180045733 (00000000000, 00000000000, 00000000000, 00000000000)
 000FFFFFFF0  001800457E4 (00000000000, 00000000000, 00000000000, 00000000000)
 End of stack trace (more stack frames may be present)
+```
 可以看到，该文件只提供了程序在coredump时函数调用的栈信息。如果只看这个stackdump文件，没法看出程序具体在哪个位置coredump。通过分析该文件，可以看见文件中的函数地址主要有2个段，分别是：
 
 00180xxxxxx
 00100xxxxxx
 从反汇编文件中可以看到，00100xxxxxx地址段是示例程序中函数地址，而00180xxxxxx地址段应该是Cygwin库函数地址段。由于栈是先进后出，所以在stackdump文件中，从下往上才是函数的调用顺序。在反汇编文件中查找coredump时最后调用的地址00100401112，就可以定位出具体的coredump位置了。这里需要指出，反汇编文件中的函数地址段没有前2个0，所以在反汇编文件查找00100401112时要省去前面2个0，经过查找，可以看到该地址位于函数f2。如下所示：
-
+```
 free(buff);  // coredump
 100401106:   48 8b 45 f8             mov    -0x8(%rbp),%rax
 10040110a:   48 89 c1                mov    %rax,%rcx
 10040110d:   e8 ce 00 00 00          callq  1004011e0 <free>
 printf("leaving %s...\n", __func__);
 100401112:   48 8d 15 41 1f 00 00    lea    0x1f41(%rip),%rdx        # 10040305a <__func__.3391>
+```
 至此，就可以知道coredump位置位于地址00100401112的上一行代码，即调用free函数时coredump，如下：
 
-
+```
 10040110d:   e8 ce 00 00 00          callq  1004011e0 <free>
+```
 
 转自:https://www.jianshu.com/p/4fbb0b863c6e
